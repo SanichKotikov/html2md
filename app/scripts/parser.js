@@ -53,6 +53,7 @@ class Parser {
      * @param {Function} callback
      */
     getLinks(startUrl, callback) {
+        this._links = [];
         this._getLinksCallback = callback || function (){};
         const urlObject = url.parse(startUrl);
 

@@ -1,6 +1,9 @@
 'use strict';
 
-const ESCAPE_CHARACTERS = {' ':'-',':':'',',':'','.':'','–':'','—':'','+':'plus','(':'',')':'','?':'','/':'-','«':'','»':''};
+const ESCAPE_CHARACTERS = {
+    ' ':'-',':':'',',':'','.':'','–':'','—':'','+':'plus',
+    '(':'',')':'','?':'','/':'-','«':'','»':'','`':''
+};
 
 // node modules
 const http = require('http');
@@ -27,6 +30,9 @@ function getImage(url) {
                 imageBuffer: Buffer.concat(chunks),
                 originalUrl: url,
             }));
+        }).on('error', err => {
+            console.log(`Got error: ${err.message}`);
+            console.log(`For `, url);
         });
     });
 }
@@ -42,6 +48,16 @@ function optimiseImage(image) {
             resolve(buffer);
         });
     });
+}
+
+/**
+ * Get random number
+ * @param {Number} min
+ * @param {Number} max
+ * @returns {Number}
+ */
+function getRandomArbitrary(min, max) {
+    return parseInt(Math.random() * (max - min) + min);
 }
 
 /**
@@ -66,6 +82,8 @@ const helpers = {
                     const htmlDoc = parser.parseFromString(body, "text/html");
                     resolve(htmlDoc);
                 });
+            }).on('error', err => {
+                console.log(`Got error: ${err.message}`);
             });
         });
     },
@@ -86,15 +104,20 @@ const helpers = {
      */
     processImage(imgUrl) {
         return new Promise(resolve => {
-            getImage(imgUrl).then(image => {
-                optimiseImage(image).then(buffer => {
-                    resolve({
-                        fileType: fileType(buffer),
-                        buffer: buffer,
-                        url: imgUrl
+            // Avoid `Uncaught Error: connect ECONNRESET`
+            const timer = getRandomArbitrary(1000, 3000);
+
+            setTimeout(() => {
+                getImage(imgUrl).then(image => {
+                    optimiseImage(image).then(buffer => {
+                        resolve({
+                            fileType: fileType(buffer),
+                            buffer: buffer,
+                            url: imgUrl
+                        });
                     });
                 });
-            });
+            }, timer);
         });
     },
 
