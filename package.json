@@ -1,0 +1,26 @@
+{
+  "name": "html2md",
+  "version": "1.0.0",
+  "description": "Desktop application for parsing nodes from Drupal websites.",
+  "author": "Sanich <sancho@cdrpro.ru>",
+  "license": "MIT",
+  "main": "app.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cdrpro/html2md"
+  },
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^1.4.1"
+  },
+  "dependencies": {
+    "escape-string-regexp": "^1.0.5",
+    "file-type": "^3.8.0",
+    "imagemin": "^5.2.2",
+    "to-markdown": "^3.0.1",
+    "translit": "0.0.1",
+    "translit-russian": "0.0.2"
+  }
+}
