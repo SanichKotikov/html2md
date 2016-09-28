@@ -122,13 +122,38 @@ const helpers = {
     },
 
     /**
+     * fs.mkdir wrapper
+     * @param {string} path
+     * @returns {Promise}
+     */
+    mkdir(path) {
+        return new Promise(resolve => {
+            fs.mkdir(path, () => resolve());
+        });
+    },
+
+    /**
+     * Write markdown on disk
+     * @param {string} path
+     * @param {string} md
+     * @returns {Promise}
+     */
+    writeMarkdown(path, md) {
+        return new Promise((resolve, reject) => {
+            fs.writeFile(`${path}/index.md`, md, 'utf8', err => {
+                err ? reject(err) : resolve();
+            });
+        });
+    },
+
+    /**
      * Write image on disk
      * @param {Object} image
      * @param {string} name
      * @param {string} path
      * @returns {Promise}
      */
-    saveFile(image, name, path) {
+    writeImage(image, name, path) {
         return new Promise((resolve, reject) => {
             fs.writeFile(`${path}/${name}`, image.buffer, err => {
                 if (err) reject(err);

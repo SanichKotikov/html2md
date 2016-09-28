@@ -4,7 +4,6 @@
 const url = require('url');
 const path = require('path');
 const toMarkdown = require('to-markdown');
-const fs = require('fs');
 const escapeStringRegexp = require('escape-string-regexp');
 
 // app modules
@@ -89,12 +88,72 @@ class Parser {
     }
 
     /**
+     * Parses and save markdown
+     * @param {Object} node
+     * @param {Array} images
+     * @returns {Promise}
+     */
+    _saveMarkdown(node, images) {
+        return new Promise(resolve => {
+            let md = node.md;
+
+            // Update links in markdown
+            if (images.length) {
+                for (const img of images) {
+                    const reg = new RegExp(escapeStringRegexp(img.url), 'g');
+                    md = md.replace(reg, img.name);
+                }
+            }
+
+            // Write markdown text into md file
+            helpers.writeMarkdown(node.folderPath, md).then(() => {
+                console.info(`"${node.title}" saved.`);
+
+                resolve({
+                    title: node.title,
+                    folder: node.folderName
+                });
+            });
+        });
+    }
+
+    /**
+     * Save Images
+     * @param {Object} node
+     * @returns {Promise}
+     */
+    _saveImages(node) {
+        return new Promise(resolve => {
+
+            // Processes images for current node
+            this._processImages(node.md).then(images => {
+
+                const promises = [];
+
+                if (images.length) {
+                    for (let i = 0; i < images.length; i++) {
+                        const img = images[i];
+                        const name = `${i + 1}.${img.fileType.ext}`;
+                        promises.push(helpers.writeImage(img, name, node.folderPath));
+                    }
+                }
+
+                // Waits saving of all images
+                Promise.all(promises).then(images => {
+                    this._saveMarkdown(node, images).then(data => resolve(data));
+                });
+            });
+        });
+    }
+
+    /**
      * Parses node
      * @param {string} nodeUrl
      * @returns {Promise}
      */
     parseNode(nodeUrl) {
         return new Promise(resolve => {
+
             // Get html DOM by url
             helpers.getHtml(nodeUrl).then(dom => {
                 const body = dom.querySelector('body');
@@ -103,46 +162,15 @@ class Parser {
                 const folderName = helpers.getFolderName(title);
                 const folderPath = path.normalize(this._savePath + folderName);
 
-                // Convert html to markdown
-                let md = toMarkdown(body.innerHTML);
+                const node = {
+                    title: title,
+                    md: toMarkdown(body.innerHTML),
+                    folderName: folderName,
+                    folderPath: folderPath
+                };
 
-                fs.mkdir(folderPath, () => {
-                    // Processes images for current node
-                    this._processImages(md).then(images => {
-
-                        const promises = [];
-
-                        if (images.length) {
-                            for (let i = 0; i < images.length; i++) {
-                                const img = images[i];
-                                const name = `${i + 1}.${img.fileType.ext}`;
-                                promises.push(helpers.saveFile(img, name, folderPath));
-                            }
-                        }
-
-                        // Waits saving of all images
-                        Promise.all(promises).then(images => {
-
-                            // Update links in markdown
-                            if (images.length) {
-                                for (const img of images) {
-                                    const reg = new RegExp(escapeStringRegexp(img.url), 'g');
-                                    md = md.replace(reg, img.name);
-                                }
-                            }
-
-                            // Write markdown text into md file
-                            fs.writeFile(`${folderPath}/index.md`, md, 'utf8', err => {
-                                if (err) throw err;
-                                console.info(`"${title}" saved.`);
-
-                                resolve({
-                                    title: title,
-                                    folder: folderName
-                                });
-                            });
-                        });
-                    });
+                helpers.mkdir(folderPath).then(() => {
+                    this._saveImages(node).then(data => resolve(data));
                 });
             });
         });
