@@ -18,48 +18,55 @@ class Parser {
      */
     constructor(savePath) {
         this._savePath = savePath;
-
         this._baseUrl = null;
-        this._getLinksCallback = null;
-        this._links = [];
     }
 
     /**
-     * Search node links
-     * @param {string} pageUrl
-     */
-    _findLinks(pageUrl) {
-        helpers.getHtml(pageUrl).then(dom => {
-            const links = [...dom.querySelectorAll('.node-teaser h2 > a')]
-                .map(link => this._baseUrl + link.getAttribute('href'));
-
-            this._links = [...this._links, ...links];
-            const nextLink = dom.querySelector('.pager .pager-next > a');
-
-            if (nextLink) {
-                const nextUrl = this._baseUrl + nextLink.getAttribute('href');
-                // TODO:
-                this._findLinks(nextUrl);
-            } else {
-                this._getLinksCallback(this._links);
-            }
-        });
-    }
-
-    /**
-     * Starts finding links
+     * Set base url
      * @param {string} startUrl
-     * @param {Function} callback
      */
-    getLinks(startUrl, callback) {
-        this._links = [];
-        this._getLinksCallback = callback || function (){};
+    setBaseUrl(startUrl) {
         const urlObject = url.parse(startUrl);
-
         this._baseUrl = `${urlObject.protocol}//${urlObject.hostname}`;
-        console.log('baseUrl: ', this._baseUrl);
+        console.info('Base URL: ', this._baseUrl);
+    }
 
-        this._findLinks(startUrl);
+    /**
+     * Get node & next urls
+     * @param dom
+     * @returns {{nodeUrls: Array, nextUrl: string}}
+     * @private
+     */
+    _getUrls(dom) {
+        const nodeLinks = [...dom.querySelectorAll('.node-teaser h2 > a')];
+        const nextLink = dom.querySelector('.pager .pager-next > a');
+
+        return {
+            nodeUrls: nodeLinks.map(link => helpers.getUrl(this._baseUrl, link)),
+            nextUrl: nextLink ? helpers.getUrl(this._baseUrl, nextLink) : undefined
+        };
+    }
+
+    /**
+     * Get urls for all nodes
+     * @param {string} startUrl
+     * @returns {Promise}
+     */
+    getNodeUrls(startUrl) {
+        let urls = [];
+
+        return new Promise(resolve => {
+            const fn = (url) => {
+                helpers.getHtml(url)
+                    .then(dom => this._getUrls(dom))
+                    .then(res => {
+                        urls = [...urls, ...res.nodeUrls];
+                        res.nextUrl ? fn(res.nextUrl) : resolve(urls);
+                    });
+            };
+
+            fn(startUrl);
+        });
     }
 
     /**
@@ -67,113 +74,98 @@ class Parser {
      * @param {string} md - markdown text
      * @returns {Promise}
      */
-    _processImages(md) {
-        return new Promise(resolve => {
-            const mdLinks = md.match(/!\[(.+?|)]\(.+?\)/ig);
-            if (!mdLinks) resolve([]);
+    static processImages(md) {
+        const links = md.match(/!\[(.+?|)]\(.+?\)/ig) || [];
+        const promises = [];
 
-            const promises = [];
+        for (let item of links) {
+            const match = item.match(/!\[(.+?|)]\((.+?)\)/i);
+            if (!match || match.length !== 3) continue;
+            promises.push(helpers.processImage(match[2]));
+        }
 
-            for (const item of mdLinks) {
-                const match = item.match(/!\[(.+?|)]\((.+?)\)/i);
-                if (!match || match.length !== 3) continue;
-                promises.push(helpers.processImage(match[2]));
-            }
-
-            // Waits processing of all images
-            Promise.all(promises).then(images => {
-                resolve(images);
-            });
-        });
+        return Promise.all(promises);
     }
 
     /**
-     * Parses and save markdown
+     * Update and save markdown
      * @param {Object} node
      * @param {Array} images
      * @returns {Promise}
+     * @private
      */
     _saveMarkdown(node, images) {
-        return new Promise(resolve => {
-            let md = node.md;
+        let md = node.md;
 
-            // Update links in markdown
-            if (images.length) {
-                for (const img of images) {
-                    const reg = new RegExp(escapeStringRegexp(img.url), 'g');
-                    md = md.replace(reg, img.name);
-                }
-            }
+        // Update links in markdown
+        for (let img of images) {
+            const reg = new RegExp(escapeStringRegexp(img.url), 'g');
+            md = md.replace(reg, img.name);
+        }
 
-            // Write markdown text into md file
-            helpers.writeMarkdown(node.folderPath, md).then(() => {
+        // Write markdown text into md file
+        return helpers.writeMarkdown(node.folderPath, md)
+            .then(() => {
                 console.info(`"${node.title}" saved.`);
-
-                resolve({
+                return {
                     title: node.title,
                     folder: node.folderName
-                });
+                };
             });
-        });
     }
 
     /**
-     * Save Images
+     * Process & save images
      * @param {Object} node
      * @returns {Promise}
+     * @private
      */
     _saveImages(node) {
-        return new Promise(resolve => {
-
-            // Processes images for current node
-            this._processImages(node.md).then(images => {
-
-                const promises = [];
-
-                if (images.length) {
-                    for (let i = 0; i < images.length; i++) {
-                        const img = images[i];
-                        const name = `${i + 1}.${img.fileType.ext}`;
-                        promises.push(helpers.writeImage(img, name, node.folderPath));
-                    }
-                }
-
-                // Waits saving of all images
-                Promise.all(promises).then(images => {
-                    this._saveMarkdown(node, images).then(data => resolve(data));
+        return Parser.processImages(node.md)
+            .then(images => {
+                const promises = images.map((img, index) => {
+                    const name = `${index + 1}.${img.fileType.ext}`;
+                    return helpers.writeImage(img, name, node.folderPath)
                 });
+
+                return Promise.all(promises);
+            })
+            .then(images => this._saveMarkdown(node, images));
+    }
+
+    /**
+     * Create Node object
+     * @param dom
+     * @returns {Promise}
+     * @private
+     */
+    _prepareNode(dom) {
+        return new Promise(res => {
+            const body = dom.querySelector('body');
+            const title = dom.querySelector('h1').textContent;
+
+            const folderName = helpers.getFolderName(title);
+            const folderPath = path.normalize(this._savePath + folderName);
+
+            res({
+                title: title,
+                md: toMarkdown(body.innerHTML),
+                folderName: folderName,
+                folderPath: folderPath
             });
         });
     }
 
     /**
-     * Parses node
+     * Precess node
      * @param {string} nodeUrl
      * @returns {Promise}
      */
-    parseNode(nodeUrl) {
-        return new Promise(resolve => {
-
-            // Get html DOM by url
-            helpers.getHtml(nodeUrl).then(dom => {
-                const body = dom.querySelector('body');
-                const title = dom.querySelector('h1').textContent;
-
-                const folderName = helpers.getFolderName(title);
-                const folderPath = path.normalize(this._savePath + folderName);
-
-                const node = {
-                    title: title,
-                    md: toMarkdown(body.innerHTML),
-                    folderName: folderName,
-                    folderPath: folderPath
-                };
-
-                helpers.mkdir(folderPath).then(() => {
-                    this._saveImages(node).then(data => resolve(data));
-                });
-            });
-        });
+    processNode(nodeUrl) {
+        return helpers.getHtml(nodeUrl)
+            .then(dom => this._prepareNode(dom))
+            .then(node => helpers.makeDir(node.folderPath).then(() => node))
+            .then(node => this._saveImages(node));
     }
 }
 

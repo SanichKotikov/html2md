@@ -37,34 +37,31 @@ class App {
         event.preventDefault();
         event.stopPropagation();
 
-        const url = this._inputUrl.value;
+        const startUrl = this._inputUrl.value;
 
-        if (!url) {
-            console.info(`Input ${this._inputUrl.getAttribute('placeholder')} is empty :(`);
+        if (!startUrl) {
+            console.info('Input URL is empty :(');
             return;
         }
 
-        this.parser.getLinks(url, links => {
-            console.info(`Found ${links.length} nodes.`);
-            const promises = links.map(link => this.parser.parseNode(link));
+        console.info('Start searching of nodes');
+        this.parser.setBaseUrl(startUrl);
 
-            Promise.all(promises).then(nodes => {
-                console.info(`Saved ${nodes.length} nodes.`);
-
-                if (nodes.length) {
-                    const summary = [];
-
-                    for (const node of nodes) {
-                        summary.push(`* [${node.title}](${node.folder}/index.md)`);
-                    }
-
-                    fs.writeFile(`${SAVE_PATH}/summary.md`, summary.join('\n'), 'utf8', err => {
-                        if (err) throw err;
-                        console.info(`summary saved.`);
-                    });
-                }
+        this.parser.getNodeUrls(startUrl)
+            .then(urls => {
+                console.info(`Found ${urls.length} nodes.`);
+                const promises = urls.map(nodeUrl => this.parser.processNode(nodeUrl));
+                return Promise.all(promises);
             })
-        });
+            .then(nodes => {
+                console.info(`Saved ${nodes.length} nodes.`);
+                const summary = nodes.map(node => `* [${node.title}](${node.folder}/index.md)`);
+
+                fs.writeFile(`${SAVE_PATH}/summary.md`, summary.join('\n'), 'utf8', (err) => {
+                    if (err) throw err;
+                    console.info(`summary saved.`);
+                });
+            });
     }
 }
 

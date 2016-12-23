@@ -38,19 +38,6 @@ function getImage(url) {
 }
 
 /**
- * Optimize image
- * @param {Object} image
- * @returns {Promise}
- */
-function optimiseImage(image) {
-    return new Promise(resolve => {
-        imagemin.buffer(image.imageBuffer, {}).then(buffer => {
-            resolve(buffer);
-        });
-    });
-}
-
-/**
  * Get random number
  * @param {Number} min
  * @param {Number} max
@@ -58,6 +45,17 @@ function optimiseImage(image) {
  */
 function getRandomArbitrary(min, max) {
     return parseInt(Math.random() * (max - min) + min);
+}
+
+/**
+ * Delay next promises
+ * @param {Number} ms
+ * @returns {Promise}
+ */
+function delay(ms) {
+    return new Promise(res => {
+        setTimeout(() => res(), ms);
+    });
 }
 
 /**
@@ -97,28 +95,28 @@ const helpers = {
         return escapeTranslit(translit(title.toLowerCase()));
     },
 
+    getUrl(baseUrl, link) {
+        return baseUrl + link.getAttribute('href');
+    },
+
     /**
      * Processes image (download, optimise)
      * @param {string} imgUrl
      * @returns {Promise}
      */
     processImage(imgUrl) {
-        return new Promise(resolve => {
-            // Avoid `Uncaught Error: connect ECONNRESET`
-            const timer = getRandomArbitrary(1000, 3000);
+        const timer = getRandomArbitrary(1000, 3000);
 
-            setTimeout(() => {
-                getImage(imgUrl).then(image => {
-                    optimiseImage(image).then(buffer => {
-                        resolve({
-                            fileType: fileType(buffer),
-                            buffer: buffer,
-                            url: imgUrl
-                        });
-                    });
-                });
-            }, timer);
-        });
+        return delay(timer)
+            .then(res => getImage(imgUrl))
+            .then(img => imagemin.buffer(img.imageBuffer, {}))
+            .then(buffer => {
+                return {
+                    fileType: fileType(buffer),
+                    buffer: buffer,
+                    url: imgUrl
+                }
+            });
     },
 
     /**
@@ -126,7 +124,7 @@ const helpers = {
      * @param {string} path
      * @returns {Promise}
      */
-    mkdir(path) {
+    makeDir(path) {
         return new Promise(resolve => {
             fs.mkdir(path, () => resolve());
         });
@@ -155,12 +153,8 @@ const helpers = {
      */
     writeImage(image, name, path) {
         return new Promise((resolve, reject) => {
-            fs.writeFile(`${path}/${name}`, image.buffer, err => {
-                if (err) reject(err);
-                resolve({
-                    url: image.url,
-                    name: name
-                });
+            fs.writeFile(`${path}/${name}`, image.buffer, (err) => {
+                err ? reject(err) : resolve({ url: image.url, name: name });
             });
         });
     }
